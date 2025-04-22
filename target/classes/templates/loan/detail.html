@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <title>Loan Details</title>
+    <link th:href="@{/webjars/bootstrap/5.3.3/css/bootstrap.min.css}" rel="stylesheet">
+    <script th:src="@{/webjars/jquery/3.7.1/jquery.min.js}"></script>
+    <script th:src="@{/webjars/bootstrap/5.3.3/js/bootstrap.bundle.min.js}"></script>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-light bg-light mb-4">
+        <div class="container">
+            <a class="navbar-brand" href="/">Loan Management System</a>
+            <div class="navbar-nav ms-auto">
+                <a href="/" class="btn btn-outline-primary me-2">Home</a>
+                <button class="btn btn-outline-danger" onclick="logout()">Logout</button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-5">
+        <div class="row mb-4">
+            <div class="col">
+                <h2>Loan Details</h2>
+            </div>
+            <div class="col text-end">
+                <a href="/loans/my" class="btn btn-secondary">Back to My Loans</a>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header">
+                <h4>Loan Information</h4>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <p><strong>Loan ID:</strong> <span id="loanId"></span></p>
+                        <p><strong>Amount:</strong> $<span id="amount"></span></p>
+                        <p><strong>Interest Rate:</strong> <span id="interestRate"></span>%</p>
+                        <p><strong>Term:</strong> <span id="termMonths"></span> months</p>
+                    </div>
+                    <div class="col-md-6">
+                        <p><strong>Status:</strong> <span id="status" class="badge"></span></p>
+                        <p><strong>Created At:</strong> <span id="createdAt"></span></p>
+                        <p><strong>Approved At:</strong> <span id="approvedAt"></span></p>
+                        <p><strong>Completed At:</strong> <span id="completedAt"></span></p>
+                    </div>
+                </div>
+                <div class="row mt-3">
+                    <div class="col-md-6">
+                        <p><strong>Total Paid:</strong> $<span id="totalPaid"></span></p>
+                    </div>
+                    <div class="col-md-6">
+                        <p><strong>Remaining Amount:</strong> $<span id="remainingAmount"></span></p>
+                    </div>
+                </div>
+                <div class="row mt-3" id="adminActions" style="display: none;">
+                    <div class="col-12">
+                        <div class="btn-group">
+                            <button class="btn btn-success" onclick="approveLoan()">Approve Loan</button>
+                            <button class="btn btn-danger" onclick="rejectLoan()">Reject Loan</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h4>Payment Schedule</h4>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Payment ID</th>
+                                <th>Installment</th>
+                                <th>Amount</th>
+                                <th>Interest</th>
+                                <th>Due Date</th>
+                                <th>Paid At</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="paymentsTableBody">
+                            <!-- Payments will be populated here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentLoanId;
+        let currentLoanStatus;
+        let isAdmin = false;
+
+        function getStatusBadgeClass(status) {
+            switch(status) {
+                case 'PENDING': return 'bg-warning';
+                case 'PAID': return 'bg-success';
+                case 'LATE': return 'bg-danger';
+                case 'DEFAULTED': return 'bg-danger';
+                case 'APPROVED': return 'bg-success';
+                case 'REJECTED': return 'bg-danger';
+                case 'ACTIVE': return 'bg-primary';
+                case 'COMPLETED': return 'bg-secondary';
+                default: return 'bg-secondary';
+            }
+        }
+
+        function formatDate(dateString) {
+            if (!dateString) return 'N/A';
+            return new Date(dateString).toLocaleString();
+        }
+
+        function formatCurrency(amount) {
+            return parseFloat(amount).toFixed(2);
+        }
+
+        function logout() {
+            localStorage.removeItem('token');
+            window.location.href = '/login';
+        }
+
+        function approveLoan() {
+            if (!confirm('Are you sure you want to approve this loan?')) {
+                return;
+            }
+
+            const token = localStorage.getItem('token');
+            $.ajax({
+                url: `/api/v1/loans/${currentLoanId}/approve`,
+                type: 'POST',
+                headers: {
+                    'Authorization': 'Bearer ' + token
+                },
+                success: function() {
+                    alert('Loan approved successfully');
+                    loadLoanDetails();
+                },
+                error: function(xhr) {
+                    alert('Error approving loan: ' + (xhr.responseJSON?.message || 'Unknown error'));
+                }
+            });
+        }
+
+        function rejectLoan() {
+            if (!confirm('Are you sure you want to reject this loan?')) {
+                return;
+            }
+
+            const token = localStorage.getItem('token');
+            $.ajax({
+                url: `/api/v1/loans/${currentLoanId}/reject`,
+                type: 'POST',
+                headers: {
+                    'Authorization': 'Bearer ' + token
+                },
+                success: function() {
+                    alert('Loan rejected successfully');
+                    loadLoanDetails();
+                },
+                error: function(xhr) {
+                    alert('Error rejecting loan: ' + (xhr.responseJSON?.message || 'Unknown error'));
+                }
+            });
+        }
+
+        function loadLoanDetails() {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                window.location.href = '/login';
+                return;
+            }
+
+            currentLoanId = window.location.pathname.split('/').pop();
+            
+            $.ajax({
+                url: `/api/v1/loans/${currentLoanId}`,
+                type: 'GET',
+                headers: {
+                    'Authorization': 'Bearer ' + token
+                },
+                success: function(response) {
+                    // Update loan information
+                    $('#loanId').text(response.id);
+                    $('#amount').text(formatCurrency(response.amount));
+                    $('#interestRate').text(response.interestRate);
+                    $('#termMonths').text(response.termMonths);
+                    $('#status').text(response.status).addClass(getStatusBadgeClass(response.status));
+                    $('#createdAt').text(formatDate(response.createdAt));
+                    $('#approvedAt').text(formatDate(response.approvedAt));
+                    $('#completedAt').text(formatDate(response.completedAt));
+                    $('#totalPaid').text(formatCurrency(response.totalPaid));
+                    $('#remainingAmount').text(formatCurrency(response.remainingAmount));
+
+                    currentLoanStatus = response.status;
+
+                    // Check if user is admin
+                    $.ajax({
+                        url: '/api/v1/auth/me',
+                        type: 'GET',
+                        headers: {
+                            'Authorization': 'Bearer ' + token
+                        },
+                        success: function(user) {
+                            isAdmin = user.role === 'ADMIN';
+                            if (isAdmin && currentLoanStatus === 'PENDING') {
+                                $('#adminActions').show();
+                            } else {
+                                $('#adminActions').hide();
+                            }
+                        }
+                    });
+
+                    // Update payments table
+                    const tbody = $('#paymentsTableBody');
+                    tbody.empty();
+
+                    response.payments.forEach(payment => {
+                        const row = `
+                            <tr>
+                                <td>${payment.id}</td>
+                                <td>${payment.installmentNumber}</td>
+                                <td>$${formatCurrency(payment.amount)}</td>
+                                <td>$${formatCurrency(payment.interest)}</td>
+                                <td>${formatDate(payment.dueDate)}</td>
+                                <td>${formatDate(payment.paidAt)}</td>
+                                <td>
+                                    <span class="badge ${getStatusBadgeClass(payment.status)}">
+                                        ${payment.status}
+                                    </span>
+                                </td>
+                                <td>
+                                    ${payment.status === 'PENDING' ? 
+                                        `<button onclick="makePayment(${payment.id})" class="btn btn-sm btn-primary">Payment</button>` :
+                                        ''}
+                                </td>
+                            </tr>
+                        `;
+                        tbody.append(row);
+                    });
+                },
+                error: function(xhr) {
+                    if (xhr.status === 401) {
+                        window.location.href = '/login';
+                    } else {
+                        alert('Error loading loan details: ' + (xhr.responseJSON?.message || 'Unknown error'));
+                    }
+                }
+            });
+        }
+
+        function makePayment(paymentId) {
+            if (!confirm('Are you sure you want to make this payment?')) {
+                return;
+            }
+
+            const token = localStorage.getItem('token');
+            $.ajax({
+                url: `/api/v1/payments/${paymentId}/pay`,
+                type: 'POST',
+                headers: {
+                    'Authorization': 'Bearer ' + token
+                },
+                success: function() {
+                    alert('Payment processed successfully');
+                    loadLoanDetails();
+                },
+                error: function(xhr) {
+                    alert('Error processing payment: ' + (xhr.responseJSON?.message || 'Unknown error'));
+                }
+            });
+        }
+
+        $(document).ready(function() {
+            loadLoanDetails();
+        });
+    </script>
+</body>
+</html> 
